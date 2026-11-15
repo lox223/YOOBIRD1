@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#FFC72C">
+  <title>YooBird</title>
+  <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <!-- Game HUD -->
+    <div id="hud" class="hidden">
+      <div class="hud-left">
+        <button class="icon-btn" data-action="pause" aria-label="Pause">
+          <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+        </button>
+        <button class="icon-btn" data-action="restart" aria-label="Restart">
+          <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+        </button>
+      </div>
+      <div class="hud-mid"><div class="hud-title" id="hud-level"></div><div class="hud-enemies" aria-label="Enemies remaining"><i></i><b id="hud-enemies">0</b></div></div>
+      <div class="hud-score"><span data-i18n="score">Score</span><b id="hud-score">0</b><div class="star-bar"><span id="star-fill"></span><i id="star-t1"></i><i id="star-t2"></i></div></div>
+    </div>
+
+    <!-- Boosters: one free use each per attempt -->
+    <div id="boosters" class="hidden">
+      <button class="boost" data-action="booster" data-b="sight" id="b-sight" aria-label="Aim">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none"/><circle cx="12" cy="12" r="2"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5" fill="none"/></svg>
+        <i>1</i><span data-i18n="bSight">Aim</span>
+      </button>
+      <button class="boost" data-action="booster" data-b="power" id="b-power" aria-label="Power">
+        <svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>
+        <i>1</i><span data-i18n="bPower">Power</span>
+      </button>
+      <button class="boost" data-action="booster" data-b="quake" id="b-quake" aria-label="Quake">
+        <svg viewBox="0 0 24 24"><path d="M2 14l3-4 3 6 3-9 3 8 3-5 3 4 2-2" fill="none"/><path d="M2 20h20" fill="none"/></svg>
+        <i>1</i><span data-i18n="bQuake">Quake</span>
+      </button>
+    </div>
+
+    <!-- Nuke: watch an ad, once per attempt -->
+    <button id="nuke-btn" class="hidden" data-action="nuke" aria-label="Tsar Bomb">
+      <svg viewBox="0 0 24 24" class="tre"><circle cx="11" cy="14.5" r="7.5"/><path d="M5.6 8.2 5 3.6l2.6 2L10 2.6l2.4 3 2.6-2-.6 4.6z" fill="#FFF1A8"/><path d="M16.4 9.4c1.6-1.4 2.6-2.8 2.4-4.4" fill="none" stroke-width="1.8" stroke-linecap="round"/><circle cx="19" cy="4.2" r="1.6" fill="#FF6B1F"/><ellipse cx="8.4" cy="12.4" rx="2" ry="1.1" fill="rgba(255,255,255,.35)" transform="rotate(-35 8.4 12.4)"/></svg>
+      <b class="ad-badge"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></b>
+      <b class="stock-badge" id="nuke-stock"></b>
+      <span data-i18n="bNuke">Tsar Bomb</span>
+    </button>
+
+    <div id="toast" class="hidden"></div>
+    <div id="level-banner" class="hidden"><b></b><span></span></div>
+    <div id="ach-toast" class="hidden"><svg viewBox="0 0 24 24"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3zm0 4H6v1a2 2 0 0 0 1.2 1.8zm10 0v2.8A2 2 0 0 0 18 8V7z"/></svg><div><small data-i18n="achNew">Achievement!</small><b></b></div></div>
+
+    <!-- Loading -->
+    <section id="screen-loading" class="screen">
+      <div class="logo">Yoo<span>Bird</span></div>
+      <div class="loader"><span></span></div>
+      <p class="muted" data-i18n="loading">Loading…</p>
+      <p class="tip" id="load-tip"></p>
+      <div class="age-mark" aria-label="Age rating 6+">6+</div>
+    </section>
+
+    <!-- Level transitions: explicit loading; interstitials are only shown here -->
+    <section id="screen-transit" class="screen hidden">
+      <div class="loader"><span></span></div>
+      <p class="muted" data-i18n="loadingLevel">Loading level…</p>
+    </section>
+
+    <!-- Nuke ad offer: explain the reward before showing the ad -->
+    <section id="screen-nuke" class="screen modal hidden">
+      <div class="panel">
+        <h2 class="title" data-i18n="nukeTitle">Tsar Bomb</h2>
+        <p class="muted" data-i18n="nukeDesc">Watch an ad and drop the Tsar Bomb: it wipes out half the level. One per attempt.</p>
+        <p class="tip" id="nuke-offer-how"></p>
+        <button class="btn btn-ad btn-big" data-action="nuke-ad">
+          <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 9v6l5-3z" fill="#FFC72C"/></svg>
+          <span data-i18n="nukeWatch">Watch ad</span>
+        </button>
+        <button class="btn btn-small" data-action="nuke-cancel"><span data-i18n="nukeCancel">Not now</span></button>
+      </div>
+    </section>
+
+    <!-- Main menu -->
+    <section id="screen-menu" class="screen hidden">
+      <div class="logo">Yoo<span>Bird</span></div>
+      <div class="menu-col">
+        <button class="btn btn-big" data-action="play">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span data-i18n="play">Play</span>
+        </button>
+        <button class="btn" data-action="levels"><span data-i18n="levels">Levels</span></button>
+        <button class="btn" data-action="settings"><span data-i18n="settings">Settings</span></button>
+      </div>
+      <div class="menu-row">
+        <button class="icon-btn big" data-action="ach" aria-label="Achievements"><svg viewBox="0 0 24 24"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3zm0 4H6v1a2 2 0 0 0 1.2 1.8zm10 0v2.8A2 2 0 0 0 18 8V7z"/></svg></button>
+        <button class="icon-btn big" data-action="wardrobe" aria-label="Outfits"><svg viewBox="0 0 24 24"><path d="M7 4h10v10h4v4H3v-4h4z"/></svg></button>
+        <div class="total-stars"><i></i><b class="ts-val">0 / 75</b></div>
+      </div>
+      <div class="version">v1.0</div>
+    </section>
+
+    <!-- Level selection -->
+    <section id="screen-levels" class="screen hidden">
+      <div class="levels-head"><h2 class="title" data-i18n="levels">Levels</h2><div class="total-stars"><i></i><b class="ts-val">0 / 45</b></div></div>
+      <div class="world-bar">
+        <button class="icon-btn world-arrow" id="world-prev" data-action="world-prev" aria-label="Previous world"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7z"/></svg></button>
+        <div class="world-title"><b id="world-name"></b><span class="world-dots"><i></i><i></i></span></div>
+        <button class="icon-btn world-arrow" id="world-next" data-action="world-next" aria-label="Next world"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7z"/></svg></button>
+      </div>
+      <div id="level-grid" class="level-grid"></div>
+      <button class="btn btn-small" data-action="back"><span data-i18n="back">Back</span></button>
+    </section>
+
+    <!-- Settings -->
+    <section id="screen-settings" class="screen modal hidden">
+      <div class="panel">
+        <h2 class="title" data-i18n="settings">Settings</h2>
+        <div class="row">
+          <span data-i18n="music">Music</span>
+          <button class="toggle" id="tg-music" data-action="toggle-music"><i></i></button>
+        </div>
+        <div class="row">
+          <span data-i18n="sounds">Sounds</span>
+          <button class="toggle" id="tg-sfx" data-action="toggle-sfx"><i></i></button>
+        </div>
+        <div class="row">
+          <span data-i18n="vibration">Vibration</span>
+          <button class="toggle" id="tg-vib" data-action="toggle-vib"><i></i></button>
+        </div>
+        <button class="btn btn-small btn-danger" data-action="reset" id="btn-reset"><span data-i18n="reset">Reset progress</span></button>
+        <button class="btn btn-small" data-action="back"><span data-i18n="back">Back</span></button>
+      </div>
+    </section>
+
+    <!-- Pause -->
+    <section id="screen-pause" class="screen modal hidden">
+      <div class="panel">
+        <h2 class="title" data-i18n="pause">Pause</h2>
+        <p class="tip" id="pause-tip"></p>
+        <button class="btn" data-action="resume"><span data-i18n="resume">Resume</span></button>
+        <button class="btn" data-action="restart"><span data-i18n="restart">Restart</span></button>
+        <div class="row-btns">
+          <button class="icon-btn big" data-action="toggle-music" id="pz-music" aria-label="Music">
+            <svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+          </button>
+          <button class="icon-btn big" data-action="toggle-sfx" id="pz-sfx" aria-label="Sounds">
+            <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none"/></svg>
+          </button>
+          <button class="icon-btn big" data-action="menu" aria-label="Menu">
+            <svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10h-6v-6H9v6H3z"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Victory -->
+    <section id="screen-win" class="screen modal hidden">
+      <div class="panel">
+        <h2 class="title" data-i18n="winTitle">Level complete!</h2>
+        <div class="stars"><i></i><i></i><i></i></div>
+        <div class="result-score"><b id="win-score">0</b></div>
+        <div class="muted"><span data-i18n="best">Best</span>: <span id="win-best">0</span> <span id="win-record" class="badge hidden" data-i18n="newRecord">New record!</span></div>
+        <div class="win-stats" id="win-stats"></div>
+        <div class="muted" id="win-next"></div>
+        <div class="badge win-nuke hidden" id="win-nuke" data-i18n="nukeEarned">+1 Tsar Bomb in stock for three stars!</div>
+        <p id="win-alldone" class="muted hidden" data-i18n="allDone"></p>
+        <div class="row-btns">
+          <button class="icon-btn big" data-action="menu" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10h-6v-6H9v6H3z"/></svg></button>
+          <button class="icon-btn big" data-action="restart" aria-label="Restart"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button>
+            <button class="btn btn-next" data-action="next" id="btn-next"><span data-i18n="next">Next</span><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+        </div>
+        <button class="btn btn-ad btn-small" data-action="ad-boost" id="btn-boost-ad">
+          <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 9v6l5-3z" fill="#3D8BFD"/></svg>
+          <span data-i18n="adBoost">Watch ad: boosters ×2 on the next level</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Defeat -->
+    <section id="screen-lose" class="screen modal hidden">
+      <div class="panel">
+        <h2 class="title" data-i18n="loseTitle">The dudes survived!</h2>
+        <p class="muted" id="lose-left"></p>
+        <p class="tip" id="lose-tip"></p>
+        <button class="btn btn-big" data-action="retry"><span data-i18n="retry">Try again</span></button>
+        <button class="btn btn-ad" data-action="watch-ad" id="btn-ad">
+          <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 9v6l5-3z" fill="#FFC72C"/></svg>
+          <span data-i18n="watchAd">Watch ad: +1 chick</span> <em id="ad-left">(2)</em>
+        </button>
+        <button class="btn btn-small" data-action="menu"><span data-i18n="menu">Menu</span></button>
+      </div>
+    </section>
+
+    <!-- Achievements -->
+    <section id="screen-ach" class="screen modal hidden">
+      <div class="panel wide">
+        <h2 class="title" data-i18n="achTitle">Achievements</h2>
+        <div id="ach-list" class="ach-list"></div>
+        <button class="btn btn-small" data-action="close-ach"><span data-i18n="back">Back</span></button>
+      </div>
+    </section>
+
+    <!-- Chick outfits -->
+    <section id="screen-wardrobe" class="screen modal hidden">
+      <div class="panel wide">
+        <h2 class="title" data-i18n="wardTitle">Outfits</h2>
+        <p class="muted" data-i18n="wardSub">Unlocked with stars</p>
+        <div id="skin-list" class="skin-list"></div>
+        <button class="btn btn-small" data-action="close-wardrobe"><span data-i18n="back">Back</span></button>
+      </div>
+    </section>
+
+    <!-- Introduction card for a new element -->
+    <section id="screen-intro" class="screen modal hidden">
+      <div class="panel intro-card">
+        <small class="intro-new" data-i18n="introNew">New!</small>
+        <canvas id="intro-canvas" width="480" height="360"></canvas>
+        <h2 class="title" id="intro-title"></h2>
+        <p class="muted" id="intro-text"></p>
+        <button class="btn" data-action="intro-ok"><span data-i18n="gotIt">Got it!</span></button>
+      </div>
+    </section>
+
+
+  </div>
+
+  <script src="js/lib/matter.min.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/platform.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>

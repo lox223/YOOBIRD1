@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>YooBird browser checks</title>
+<style>body{margin:0;background:#161616;color:white;font:14px monospace}iframe{border:0;width:100vw;height:85vh}pre{white-space:pre-wrap;padding:12px}</style></head>
+<body><iframe id="app"></iframe><pre id="results">RUNNING</pre><script>
+(async () => {
+  const report = [], errors = [], events = [], store = new Map();
+  const mock = new URLSearchParams(location.search).has('mock');
+  const assert = (value, message) => { if (!value) throw new Error(message); report.push('PASS ' + message); };
+  try {
+    const frame = document.getElementById('app');
+    const html = await (await fetch('../index.html')).text();
+    const sdkScript = mock ? `<script>window.__events = parent.__events; window.__store = parent.__store;
+      window.CrazyGames = { SDK: { environment: 'local', init: async () => {},
+      game: Object.fromEntries(['loadingStart','loadingStop','gameplayStart','gameplayStop'].map(k => [k, () => window.__events.push(k)])),
+      data: { getItem: k => window.__store.get(k) || null, setItem: (k,v) => window.__store.set(k,v) },
+      ad: { requestAd: (type, cb) => { window.__lastAd = cb; cb.adStarted(); } } } };<\/script>` : '';
+    window.__events = events; window.__store = store;
+    frame.contentWindow.addEventListener('error', e => errors.push(e.message));
+    // Use the actual entrypoint and local assets; replace only the network SDK with a deterministic mock.
+    const source = html.replace('<head>', '<head><base href="../">').replace(/<script[^>]+src="https:\/\/sdk\.crazygames\.com\/crazygames-sdk-v3\.js"[^>]*><\/script>/, sdkScript);
+    frame.contentDocument.open(); frame.contentDocument.write(source); frame.contentDocument.close();
+    await new Promise((resolve, reject) => {
+      let count = 0;
+      const timer = setInterval(() => {
+        if (frame.contentWindow.YB && frame.contentWindow.YB.UI.save && !frame.contentDocument.querySelector('#screen-menu').classList.contains('hidden')) { clearInterval(timer); resolve(); }
+        else if (++count > 100) { clearInterval(timer); reject(new Error('Game did not reach its main menu')); }
+      }, 50);
+    });
+    const w = frame.contentWindow, d = frame.contentDocument, { UI, Game, Platform: P, I18n } = w.YB;
+    assert(errors.length === 0, 'Entrypoint loads without JavaScript errors: ' + errors.join('; '));
+    I18n.set('ru');
+    assert(I18n.lang === 'en' && d.documentElement.lang === 'en', 'Russian cannot be enabled');
+    assert(!d.querySelector('[data-action="lang"]'), 'No language selector');
+    assert(!/[Ѐ-ӿ]/.test(d.body.textContent), 'All interface text is English');
+    assert(!d.querySelector('[src*="vk-bridge"],.vk-only'), 'No VK integration in the entrypoint');
+    d.querySelector('[data-action="play"]').click();
+    await new Promise(r => setTimeout(r, 100));
+    assert(Game.state === 'play' && Game.sim, 'Play opens a level');
+    while (!d.querySelector('#screen-intro').classList.contains('hidden')) UI.act('intro-ok');
+    P.syncGameplay();
+    if (mock) {
+      assert(events[0] === 'loadingStart' && events.includes('loadingStop'), 'SDK loading lifecycle');
+      assert(events.includes('gameplayStart'), 'SDK gameplay start');
+      UI.act('pause'); assert(events.at(-1) === 'gameplayStop', 'Pause stops SDK gameplay');
+      UI.act('resume'); assert(events.at(-1) === 'gameplayStart', 'Resume starts SDK gameplay');
+      const music = w.YB.Audio;
+      let reward = P.showRewarded();
+      assert(P.adOpen && Game.extPause.has('ad') && !Game.running(), 'Ad pauses gameplay');
+      assert(await P.showRewarded() === false, 'Concurrent ad request rejected');
+      w.__lastAd.adError({ code: 'no_inventory' });
+      assert(await reward === false && !P.adOpen && !Game.extPause.has('ad'), 'Ad errors restore game without reward');
+      reward = P.showRewarded(); w.__lastAd.adFinished();
+      assert(await reward === true && !P.adOpen, 'Finished ad grants reward');
+      reward = P.showRewarded(); w.__lastAd.adFinished(); w.__lastAd.adError({});
+      assert(await reward === true && !Game.extPause.has('ad'), 'Duplicate ad callbacks settle once');
+      UI.persist(); assert(store.has('yoobird_save_v1'), 'SDK Data saves progress');
+    } else {
+      assert(await P.showRewarded() === false, 'Standalone mode never grants fake ad rewards');
+    }
+    UI.toMenu(); assert(Game.state === 'menu', 'Return to menu');
+    assert(errors.length === 0, 'No runtime JavaScript errors after interaction');
+    document.getElementById('results').textContent = 'SUCCESS\n' + report.join('\n') + '\nSDK events: ' + events.join(', ');
+  } catch (error) { document.getElementById('results').textContent = 'FAIL\n' + report.join('\n') + '\n' + error.stack; }
+})();
+</script></body></html>
